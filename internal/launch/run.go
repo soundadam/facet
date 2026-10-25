@@ -38,7 +38,7 @@ type Supervisor struct {
 // in which case the browser is asked to quit.
 func (s *Supervisor) Run(ctx context.Context) error {
 	p, store := s.Profile, s.Store
-	opt := Options{UserDataDir: store.UserDataDir(p.ID), URLs: s.URLs}
+	opt := Options{UserDataDir: store.UserDataDir(p.ID), CacheDir: store.CacheDir(p.ID), URLs: s.URLs}
 	bridgeURL := ""
 	switch {
 	case p.Proxy.Direct():

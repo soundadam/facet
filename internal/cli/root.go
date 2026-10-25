@@ -27,8 +27,10 @@ type App struct {
 	Out      io.Writer
 	Err      io.Writer
 	StdinTTY bool
-	Identity appkit.App
-	Store    *profile.Store
+	// StdoutTTY with StdinTTY makes a bare `facet` open the interactive screen.
+	StdoutTTY bool
+	Identity  appkit.App
+	Store     *profile.Store
 }
 
 // Execute parses args and runs the selected command, returning the process
@@ -52,9 +54,10 @@ func (app *App) newRootCommand() *cobra.Command {
 		Long: `facet keeps one fingerprint-chromium identity per account: its own seed,
 cookies, proxy and locale, opened in its own window.
 
-Run it without arguments to list profiles. Proxy passwords live in the
-system keychain; a proxy with credentials goes through a local bridge,
-since Chromium cannot authenticate to a proxy by itself.`,
+Run it without arguments on a terminal to manage profiles interactively;
+piped, it lists them. Proxy passwords live in the system keychain; a proxy
+with credentials goes through a local bridge, since Chromium cannot
+authenticate to a proxy by itself.`,
 		Example: `  # a profile per account, with its own exit
   facet new shop-us --proxy socks5://user@203.0.113.7:1080 --timezone America/New_York --lang en-US
 
@@ -63,6 +66,9 @@ since Chromium cannot authenticate to a proxy by itself.`,
   facet open 1 https://example.com/`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if app.StdinTTY && app.StdoutTTY {
+				return app.runUI(cmd.Context())
+			}
 			return app.list(cmd.Context())
 		},
 	}
@@ -75,8 +81,10 @@ since Chromium cannot authenticate to a proxy by itself.`,
 		app.newNewCommand(),
 		app.newSetCommand(),
 		app.newListCommand(),
+		app.newUICommand(),
 		app.newShowCommand(),
 		app.newRemoveCommand(),
+		app.newWipeCommand(),
 		app.newOpenCommand(),
 		app.newStopCommand(),
 		app.newRunCommand(),

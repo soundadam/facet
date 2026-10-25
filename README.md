@@ -1,6 +1,6 @@
 # facet
 
-**给 fingerprint-chromium 管多账号的命令行工具**：一个账号一套指纹、cookie、
+**给 fingerprint-chromium 管多账号的终端工具**：一个账号一套指纹、cookie、
 代理和语言时区，各开各的窗口。
 
 [![CI](https://github.com/soundadam/facet/actions/workflows/ci.yml/badge.svg)](https://github.com/soundadam/facet/actions/workflows/ci.yml)
@@ -9,8 +9,9 @@
 
 [fingerprint-chromium](https://github.com/adryfish/fingerprint-chromium) 的
 指纹全靠启动参数：种子、平台、品牌、时区、语言、代理，每次手敲，还要自己
-记哪个账号用了哪个种子。facet 把这些存成 profile，`facet open` 一条命令按
-profile 拼好参数启动。支持 macOS 和 Linux，Go 编写。
+记哪个账号用了哪个种子。facet 把这些存成 profile，在终端里直接运行 `facet`
+就能列出、新建、编辑、打开和关闭它们；也可以用 `facet open` 这类子命令写脚本。
+支持 macOS 和 Linux，Go 编写。
 
 ## 为什么是 facet
 
@@ -25,14 +26,20 @@ profile 拼好参数启动。支持 macOS 和 Linux，Go 编写。
   会把这种状态标成 `running, bridge down`。
 - **密码不落盘**：代理密码存在系统钥匙串（macOS Keychain / Linux Secret
   Service），`profile.toml` 里只有用户名。
+- **数据都在一个目录里**：cookie、登录状态、缓存全在 profile 自己的目录下，
+  `facet wipe` 清掉浏览数据但保留指纹，`facet rm` 整个移进废纸篓。
 - **默认自洽**：平台默认与本机一致，此时 GPU 不伪装，WebGL 报的就是真显卡；
   设了代理却没设时区会提醒你，因为出口 IP 和时区对不上是最常见的破绽。
 
 ## 快速开始
 
-先装好 fingerprint-chromium（142 及以上，推荐 148），macOS 放到
-`/Applications/Chromium.app`，Linux 把 `fingerprint-chromium` 放进 PATH。
-放在别处就设 `FACET_CHROMIUM`，指向 `.app` 或可执行文件都行。
+先从 [fingerprint-chromium 的 Releases](https://github.com/adryfish/fingerprint-chromium/releases)
+装好内核（142 及以上，推荐 148）。macOS 的安装包文件名叫
+`ungoogled-chromium_<版本>_macos.dmg`，装出来是 `Chromium.app`，但它是
+fingerprint-chromium，不是普通 ungoogled-chromium；官方 Chromium 或 Chrome
+不认 `--fingerprint` 参数，不能用。macOS 放到 `/Applications/Chromium.app`，
+Linux 把 `fingerprint-chromium` 放进 PATH。放在别处就设 `FACET_CHROMIUM`，
+指向 `.app` 或可执行文件都行。
 
 ```sh
 brew trust --tap soundadam/tap
@@ -42,24 +49,48 @@ brew install --cask soundadam/tap/facet
 facet new shop-us --proxy socks5://alice@203.0.113.7:1080 \
   --timezone America/New_York --lang en-US
 
+facet                                    # 交互界面
 facet open shop-us                       # 启动
 facet open 1 https://example.com/        # 已在运行时，在同一个浏览器里开新窗口
-facet                                    # 列出所有 profile
 facet stop shop-us
 ```
 
 profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指定。
 
+## 交互界面
+
+在终端里直接运行 `facet`（或 `facet ui`）。上半部分是 profile 列表和运行
+状态，每 2 秒刷新；下半部分是选中 profile 的设置。
+
+| 按键 | 作用 |
+| --- | --- |
+| `↑` `↓` / `j` `k` | 选择 |
+| `enter` / `o` | 打开；已在运行就开新窗口 |
+| `s` | 关闭 |
+| `n` / `e` | 新建 / 编辑 |
+| `w` | 清浏览数据，保留指纹（要确认） |
+| `d` | 删除 profile（要确认） |
+| `r` | 重新读取 |
+| `q` | 退出界面，已打开的浏览器继续运行 |
+
+新建和编辑是同一个表单：`tab` 或 `↓` 换下一项，`enter` 在最后一项保存，
+`ctrl+s` 随时保存，`esc` 取消。时区和语言输入开头后按 `→` 补全。密码框
+留空表示保留钥匙串里原有的密码。
+
+输出不是终端时（比如接管道），`facet` 退回成 `facet ls` 的表格。
+
 ## 命令
 
 | 命令 | 作用 |
 | --- | --- |
-| `facet` / `facet ls` | 列出 profile：序号、名字、平台、代理、时区、运行状态 |
+| `facet` / `facet ui` | 交互界面；不在终端里时同 `facet ls` |
+| `facet ls` | 列出 profile：序号、名字、平台、代理、时区、运行状态 |
 | `facet new NAME` | 新建 profile，生成种子和硬件并发数 |
 | `facet set PROFILE` | 修改代理、时区、语言、品牌、备注、启动页，或用 `--name` 改名；种子和平台不能改 |
 | `facet show PROFILE` | 显示全部设置，以及钥匙串里有没有代理密码 |
 | `facet open PROFILE [URL...]` | 启动；已运行就开新窗口。`--foreground` 留在前台看日志 |
 | `facet stop PROFILE` | 关闭浏览器 |
+| `facet wipe PROFILE` | 把 cookie、登录、历史、缓存移进废纸篓；种子、代理、时区不变，下次打开像新装的浏览器 |
 | `facet rm PROFILE` | 把 profile 目录（含 cookie）移进废纸篓，并删掉钥匙串里的密码 |
 | `facet update` / `facet version` | 自更新 / 版本 |
 
@@ -82,13 +113,25 @@ profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指�
 ```text
 ~/Library/Application Support/facet/      macOS（Linux 是 ~/.config/facet/）
   profiles/<id>/profile.toml              设置，可以手改
-  profiles/<id>/user-data/                Chromium 的 --user-data-dir
+  profiles/<id>/user-data/                Chromium 的 --user-data-dir：cookie、登录、历史、扩展
+  profiles/<id>/cache/                    Chromium 的 --disk-cache-dir：HTTP 和代码缓存
   profiles/<id>/run.json                  运行时存在：supervisor、浏览器 PID 和桥地址
   profiles/<id>/facet.log                 上一次运行的日志，启动失败先看这里
 ```
 
 设 `FACET_HOME` 可以换位置。代理密码在钥匙串里，服务名 `facet`，账户名
 `proxy:<id>`。
+
+profile 目录以外，Chromium 还会碰这几处：
+
+- `~/Library/Caches/facet/profiles/<id>/`：macOS 上 Chromium 默认把缓存放
+  这里。facet 用 `--disk-cache-dir` 把缓存挪回 profile 目录，这里只剩空
+  目录，`wipe` 和 `rm` 会一并删掉。
+- 钥匙串里的 `Chromium Safe Storage`：Chromium 用这把钥匙加密各 profile
+  的 cookie 和密码。所有 profile 共用一把，网站看不到它，只关系到本机谁能
+  解密这些文件。
+- `~/Library/Application Support/Chromium/`：直接双击打开 Chromium.app 时
+  用的默认 profile，不归 facet 管，也不会被 facet 用到。
 
 ## 运行方式
 
@@ -106,7 +149,7 @@ profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指�
 
 ## 注意
 
-- 浏览器下载的 Chromium.app 带隔离属性，macOS 会把它放进 App Translocation
+- 用浏览器下载的 Chromium.app 带隔离属性，macOS 会把它放进 App Translocation
   的随机路径里运行。用 facet 前先打开一次并在「隐私与安全性」里允许，或者
   自己去掉：
 

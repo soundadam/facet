@@ -11,6 +11,9 @@ import (
 // Options are the per-launch inputs that are not part of the profile.
 type Options struct {
 	UserDataDir string
+	// CacheDir keeps the HTTP and code caches beside the profile; on macOS
+	// Chromium would otherwise put them under ~/Library/Caches.
+	CacheDir string
 	// ProxyServer is the value for --proxy-server: the bridge, or the
 	// upstream itself when it needs no credentials. Empty means direct.
 	ProxyServer string
@@ -32,6 +35,7 @@ func Args(p *profile.Profile, k *Kernel, opt Options) (args, warnings []string) 
 			args = append(args, flag+"="+value)
 		}
 	}
+	add("--disk-cache-dir", opt.CacheDir)
 	add("--fingerprint-platform-version", fp.PlatformVersion)
 	add("--fingerprint-brand", fp.Brand)
 	add("--fingerprint-brand-version", fp.BrandVersion)

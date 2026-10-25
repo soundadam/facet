@@ -27,12 +27,13 @@ func main() {
 	}
 
 	app := &cli.App{
-		In:       os.Stdin,
-		Out:      os.Stdout,
-		Err:      os.Stderr,
-		StdinTTY: isTerminal(os.Stdin),
-		Identity: identity,
-		Store:    profile.NewStore(root),
+		In:        os.Stdin,
+		Out:       os.Stdout,
+		Err:       os.Stderr,
+		StdinTTY:  isTerminal(os.Stdin),
+		StdoutTTY: isTerminal(os.Stdout),
+		Identity:  identity,
+		Store:     profile.NewStore(root),
 	}
 
 	notice := appcli.StartNotice(identity)

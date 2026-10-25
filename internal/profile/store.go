@@ -26,6 +26,7 @@ var ErrNotFound = errors.New("no such profile")
 //
 //	<Root>/profiles/<id>/profile.toml   settings
 //	<Root>/profiles/<id>/user-data/     Chromium --user-data-dir
+//	<Root>/profiles/<id>/cache/         Chromium --disk-cache-dir
 //	<Root>/profiles/<id>/run.json       present while facet runs it
 //	<Root>/profiles/<id>/facet.log      supervisor log of the last run
 type Store struct {
@@ -51,9 +52,37 @@ func NewStore(root string) *Store { return &Store{Root: root} }
 
 func (s *Store) Dir(id string) string         { return filepath.Join(s.Root, "profiles", id) }
 func (s *Store) UserDataDir(id string) string { return filepath.Join(s.Dir(id), "user-data") }
+func (s *Store) CacheDir(id string) string    { return filepath.Join(s.Dir(id), "cache") }
 func (s *Store) LogPath(id string) string     { return filepath.Join(s.Dir(id), "facet.log") }
 func (s *Store) runPath(id string) string     { return filepath.Join(s.Dir(id), "run.json") }
 func (s *Store) tomlPath(id string) string    { return filepath.Join(s.Dir(id), "profile.toml") }
+
+// macCacheMirror is where Chromium on macOS puts a profile's caches when
+// its user data lives under ~/Library/Application Support: the same path
+// under ~/Library/Caches. --disk-cache-dir moves the caches themselves, but
+// Chromium still leaves empty directories there, and builds before that
+// flag left real caches. Empty when the rule does not apply.
+func (s *Store) macCacheMirror(id string) string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	rel, err := filepath.Rel(filepath.Join(home, "Library", "Application Support"), s.Dir(id))
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return filepath.Join(home, "Library", "Caches", rel)
+}
+
+// dropCacheMirror deletes the mirror outright: it only ever holds caches.
+func (s *Store) dropCacheMirror(id string) {
+	if dir := s.macCacheMirror(id); dir != "" {
+		_ = os.RemoveAll(dir)
+	}
+}
 
 // List returns every profile ordered by serial. A profile that fails to
 // load is reported in the error but does not hide the others.
@@ -177,14 +206,8 @@ func (s *Store) Remove(p *Profile) (string, error) {
 	if state, _ := s.RunState(p.ID); state != nil {
 		return "", fmt.Errorf("profile %q is running (pid %d); close it first", p.Name, state.BrowserPID)
 	}
-	trash := s.Trash
-	if trash == "" {
-		var err error
-		if trash, err = defaultTrash(); err != nil {
-			return "", err
-		}
-	}
-	if err := os.MkdirAll(trash, 0o700); err != nil {
+	trash, err := s.trashDir()
+	if err != nil {
 		return "", err
 	}
 	dest := filepath.Join(trash, fmt.Sprintf("facet-%s-%s", sanitize(p.Name), p.ID))
@@ -194,7 +217,43 @@ func (s *Store) Remove(p *Profile) (string, error) {
 	if err := os.Rename(s.Dir(p.ID), dest); err != nil {
 		return "", fmt.Errorf("move to trash: %w", err)
 	}
+	s.dropCacheMirror(p.ID)
 	return dest, nil
+}
+
+// Wipe moves the profile's browser data and caches (cookies, logins,
+// history, local storage) to the trash and keeps profile.toml, so the
+// fingerprint stays and the next launch starts like a fresh install.
+func (s *Store) Wipe(p *Profile) (string, error) {
+	if state, _ := s.RunState(p.ID); state != nil {
+		return "", fmt.Errorf("profile %q is running (pid %d); close it first", p.Name, state.BrowserPID)
+	}
+	trash, err := s.trashDir()
+	if err != nil {
+		return "", err
+	}
+	dest := filepath.Join(trash, fmt.Sprintf("facet-%s-%s-data-%s", sanitize(p.Name), p.ID, time.Now().Format("20060102-150405")))
+	if err := os.MkdirAll(dest, 0o700); err != nil {
+		return "", err
+	}
+	for _, dir := range []string{s.UserDataDir(p.ID), s.CacheDir(p.ID)} {
+		if err := os.Rename(dir, filepath.Join(dest, filepath.Base(dir))); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("move to trash: %w", err)
+		}
+	}
+	s.dropCacheMirror(p.ID)
+	return dest, nil
+}
+
+func (s *Store) trashDir() (string, error) {
+	trash := s.Trash
+	if trash == "" {
+		var err error
+		if trash, err = defaultTrash(); err != nil {
+			return "", err
+		}
+	}
+	return trash, os.MkdirAll(trash, 0o700)
 }
 
 func defaultTrash() (string, error) {

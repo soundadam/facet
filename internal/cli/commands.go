@@ -58,10 +58,8 @@ func (app *App) apply(cmd *cobra.Command, p *profile.Profile, f *editFlags) (pro
 		p.Name = f.name
 	}
 	if changed("timezone") {
-		if f.timezone != "" {
-			if _, err := time.LoadLocation(f.timezone); err != nil || !strings.Contains(f.timezone, "/") && f.timezone != "UTC" {
-				return false, "", false, fmt.Errorf("timezone %q: not an IANA zone name such as Europe/Berlin", f.timezone)
-			}
+		if err := checkTimezone(f.timezone); err != nil {
+			return false, "", false, err
 		}
 		p.Locale.Timezone = f.timezone
 	}
@@ -107,6 +105,16 @@ func (app *App) apply(cmd *cobra.Command, p *profile.Profile, f *editFlags) (pro
 		return true, pw, keep, nil
 	}
 	return false, "", false, nil
+}
+
+func checkTimezone(tz string) error {
+	if tz == "" {
+		return nil
+	}
+	if _, err := time.LoadLocation(tz); err != nil || !strings.Contains(tz, "/") && tz != "UTC" {
+		return fmt.Errorf("timezone %q: not an IANA zone name such as Europe/Berlin", tz)
+	}
+	return nil
 }
 
 func checkLanguage(lang string) error {
@@ -382,6 +390,30 @@ trash, and deletes its proxy password from the keychain.`,
 	}
 }
 
+func (app *App) newWipeCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "wipe PROFILE",
+		Short: "Clear a profile's cookies and browsing data, keeping its fingerprint",
+		Long: `Wipe moves the profile's browser data and caches (cookies, logins,
+history, local storage, extensions) to the trash. The seed, proxy and locale
+stay, so the next launch is the same identity starting from a fresh install.`,
+		GroupID: groupProfiles,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			p, err := app.Store.Resolve(args[0])
+			if err != nil {
+				return err
+			}
+			dest, err := app.Store.Wipe(p)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(app.Out, "wiped #%d %s; old data is in %s\n", p.Serial, p.Name, dest)
+			return nil
+		},
+	}
+}
+
 func (app *App) newOpenCommand() *cobra.Command {
 	var foreground bool
 	cmd := &cobra.Command{
@@ -402,40 +434,74 @@ The browser's log is in the profile directory (facet show PROFILE).`,
 			if err != nil {
 				return err
 			}
-			urls := args[1:]
-			kernel, err := launch.Locate(ctx)
-			if err != nil {
-				return err
-			}
-			if state, _ := app.Store.RunState(p.ID); state != nil {
-				if state.Orphaned() && state.Bridge != "" {
-					return fmt.Errorf("#%d %s lost its proxy bridge, so its pages cannot load; run `facet stop %d` and open it again", p.Serial, p.Name, p.Serial)
-				}
-				if err := launch.NewWindow(kernel, app.Store.UserDataDir(p.ID), urls); err != nil {
-					return err
-				}
-				fmt.Fprintf(app.Out, "#%d %s is running; opened a new window\n", p.Serial, p.Name)
-				return nil
-			}
 			if foreground {
-				return app.supervise(ctx, p, kernel, urls)
+				if state, _ := app.Store.RunState(p.ID); state == nil {
+					kernel, err := launch.Locate(ctx)
+					if err != nil {
+						return err
+					}
+					return app.supervise(ctx, p, kernel, args[1:])
+				}
 			}
-			state, err := launch.Detach(ctx, app.Store, p, urls)
+			msg, err := app.openProfile(ctx, p, args[1:])
 			if err != nil {
 				return err
 			}
-			via := ""
-			if state.Bridge != "" {
-				via = ", proxy via bridge " + state.Bridge
-			} else if !p.Proxy.Direct() {
-				via = ", proxy " + p.Proxy.String()
-			}
-			fmt.Fprintf(app.Out, "opened #%d %s (Chromium %s, pid %d%s)\n", p.Serial, p.Name, kernel.Version, state.BrowserPID, via)
+			fmt.Fprintln(app.Out, msg)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&foreground, "foreground", false, "stay attached and print the browser's log until it exits")
 	return cmd
+}
+
+// openProfile starts p in the background, or opens a new window when it
+// is already running, and describes what happened.
+func (app *App) openProfile(ctx context.Context, p *profile.Profile, urls []string) (string, error) {
+	kernel, err := launch.Locate(ctx)
+	if err != nil {
+		return "", err
+	}
+	if state, _ := app.Store.RunState(p.ID); state != nil {
+		if state.Orphaned() && state.Bridge != "" {
+			return "", fmt.Errorf("#%d %s lost its proxy bridge, so its pages cannot load; stop it and open it again", p.Serial, p.Name)
+		}
+		if err := launch.NewWindow(kernel, app.Store.UserDataDir(p.ID), urls); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("#%d %s is running; opened a new window", p.Serial, p.Name), nil
+	}
+	state, err := launch.Detach(ctx, app.Store, p, urls)
+	if err != nil {
+		return "", err
+	}
+	via := ""
+	if state.Bridge != "" {
+		via = ", proxy via bridge " + state.Bridge
+	} else if !p.Proxy.Direct() {
+		via = ", proxy " + p.Proxy.String()
+	}
+	return fmt.Sprintf("opened #%d %s (Chromium %s, pid %d%s)", p.Serial, p.Name, kernel.Version, state.BrowserPID, via), nil
+}
+
+// stopProfile quits p's browser and waits for its supervisor to clean up.
+func (app *App) stopProfile(p *profile.Profile) (string, error) {
+	state, err := app.Store.RunState(p.ID)
+	if err != nil {
+		return "", err
+	}
+	if state == nil {
+		return fmt.Sprintf("#%d %s is not running", p.Serial, p.Name), nil
+	}
+	if err := launch.Stop(state); err != nil {
+		return "", err
+	}
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
+		if st, _ := app.Store.RunState(p.ID); st == nil {
+			return fmt.Sprintf("stopped #%d %s", p.Serial, p.Name), nil
+		}
+	}
+	return "", fmt.Errorf("#%d %s did not stop within 15s (supervisor pid %d)", p.Serial, p.Name, state.SupervisorPID)
 }
 
 func (app *App) newStopCommand() *cobra.Command {
@@ -449,24 +515,12 @@ func (app *App) newStopCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			state, err := app.Store.RunState(p.ID)
+			msg, err := app.stopProfile(p)
 			if err != nil {
 				return err
 			}
-			if state == nil {
-				fmt.Fprintf(app.Out, "#%d %s is not running\n", p.Serial, p.Name)
-				return nil
-			}
-			if err := launch.Stop(state); err != nil {
-				return err
-			}
-			for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
-				if st, _ := app.Store.RunState(p.ID); st == nil {
-					fmt.Fprintf(app.Out, "stopped #%d %s\n", p.Serial, p.Name)
-					return nil
-				}
-			}
-			return fmt.Errorf("#%d %s did not stop within 15s (supervisor pid %d)", p.Serial, p.Name, state.SupervisorPID)
+			fmt.Fprintln(app.Out, msg)
+			return nil
 		},
 	}
 }

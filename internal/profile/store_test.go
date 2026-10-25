@@ -107,6 +107,42 @@ func TestRemoveMovesToTrashAndFreesName(t *testing.T) {
 	}
 }
 
+func TestWipeKeepsProfile(t *testing.T) {
+	s := newTestStore(t)
+	p := mustNew(t, "fresh", PlatformWindows)
+	if err := s.Create(p); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{filepath.Join(s.UserDataDir(p.ID), "Default"), s.CacheDir(p.ID)} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dest, err := s.Wipe(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"user-data", "cache"} {
+		if _, err := os.Stat(filepath.Join(dest, name)); err != nil {
+			t.Fatalf("trash copy missing %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(s.UserDataDir(p.ID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("user data still present: %v", err)
+	}
+	got, err := s.Load(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Fingerprint.Seed != p.Fingerprint.Seed {
+		t.Fatalf("seed changed: %d -> %d", p.Fingerprint.Seed, got.Fingerprint.Seed)
+	}
+	// Wiping a profile that never ran has nothing to move.
+	if _, err := s.Wipe(p); err != nil {
+		t.Fatalf("second wipe: %v", err)
+	}
+}
+
 func TestRunStateDropsDeadProcesses(t *testing.T) {
 	s := newTestStore(t)
 	p := mustNew(t, "run", PlatformWindows)
