@@ -1,0 +1,39 @@
+# Continuous integration for facet.
+#
+# CI never starts a browser: the bridge is tested against in-process proxies
+# and the launcher against fake kernels. A real fingerprint-chromium run is a
+# manual check before a release.
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint and tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: make ci
+        run: make ci GOTOOLCHAIN=local
