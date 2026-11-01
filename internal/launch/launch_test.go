@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -109,6 +110,9 @@ func TestDirectProxy(t *testing.T) {
 }
 
 func TestResolveExe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bundle paths are macOS paths")
+	}
 	exe, bundle := resolveExe("/Applications/Chromium.app/")
 	if exe != "/Applications/Chromium.app/Contents/MacOS/Chromium" || bundle != "/Applications/Chromium.app" {
 		t.Fatalf("resolveExe = %s, %s", exe, bundle)
@@ -118,7 +122,25 @@ func TestResolveExe(t *testing.T) {
 	}
 }
 
+func TestSiblingVersion(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"chrome.exe", "142.0.7444.175", "150.0.7871.186.manifest", "150.0.7871.99.manifest", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := siblingVersion(dir); got != "150.0.7871.186" {
+		t.Fatalf("siblingVersion = %q", got)
+	}
+	if got := siblingVersion(t.TempDir()); got != "" {
+		t.Fatalf("siblingVersion(empty) = %q", got)
+	}
+}
+
 func TestLocateFromEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake kernels are shell scripts")
+	}
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "chrome")
 	script := "#!/bin/sh\necho 'Chromium 148.0.7778.215 '\n"

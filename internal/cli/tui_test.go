@@ -2,6 +2,7 @@ package cli
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -89,13 +90,97 @@ func TestFormRejectsBadInput(t *testing.T) {
 	}{
 		{map[string]string{"name": ""}, "non-empty"},
 		{map[string]string{"name": "a", "timezone": "Mars/Base"}, "IANA"},
-		{map[string]string{"name": "a", "language": "en_US"}, "BCP 47"},
+		{map[string]string{"name": "a", "language": "en US!"}, "BCP 47"},
 		{map[string]string{"name": "a", "proxy": "ftp://h:1"}, "scheme"},
 	} {
 		f := newProfileForm(nil, "", 80)
 		fill(f, tc.values)
 		if _, err := app.saveForm(f); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: err %v, want %q", tc.values, err, tc.want)
+		}
+	}
+}
+
+func TestFormPresets(t *testing.T) {
+	app := testApp(t)
+	f := newProfileForm(nil, "", 80)
+	fill(f, map[string]string{"name": "a"})
+	tz := slices.IndexFunc(f.fields, func(fl uiField) bool { return fl.key == "timezone" })
+	f.focus = tz
+	m := &uiModel{app: app, mode: modeForm, form: f}
+	right := tea.KeyPressMsg{Code: tea.KeyRight}
+	left := tea.KeyPressMsg{Code: tea.KeyLeft}
+	m.Update(right)
+	if got := f.value("timezone"); got != zonePresets[0].zone {
+		t.Fatalf("→ from empty gave %q", got)
+	}
+	m.Update(left)
+	m.Update(left)
+	if got := f.value("timezone"); got != "UTC" {
+		t.Fatalf("← wraps to %q", got)
+	}
+	// A typed value is left to the text input.
+	f.fields[tz].input.SetValue("Las Vegas")
+	m.Update(right)
+	if got := f.value("timezone"); got != "Las Vegas" {
+		t.Fatalf("→ changed a typed value to %q", got)
+	}
+	if d := describeZoneField("Las Vegas"); !strings.HasPrefix(d, "→ America/Los_Angeles") {
+		t.Fatalf("describe = %q", d)
+	}
+
+	fill(f, map[string]string{"language": "中文"})
+	p, err := app.saveForm(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Locale.Timezone != "America/Los_Angeles" || p.Locale.Language != "zh-CN" {
+		t.Fatalf("saved locale %+v", p.Locale)
+	}
+}
+
+func TestResolveLocale(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                  "",
+		"America/New_York":  "America/New_York",
+		"asia/tokyo":        "Asia/Tokyo",
+		"America/Las_Vegas": "America/Los_Angeles",
+		"las vegas":         "America/Los_Angeles",
+		"New York":          "America/New_York",
+		"singapore":         "Asia/Singapore",
+		"Japan":             "Asia/Tokyo",
+		"纽约":                "America/New_York",
+		"Europe/Warsaw":     "Europe/Warsaw",
+		"utc":               "UTC",
+	} {
+		if got, err := resolveTimezone(in); err != nil || got != want {
+			t.Errorf("resolveTimezone(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"Mars/Base", "Local", "Atlantis"} {
+		if _, err := resolveTimezone(in); err == nil {
+			t.Errorf("resolveTimezone(%q) accepted", in)
+		}
+	}
+	for in, want := range map[string]string{
+		"":           "",
+		"en-US":      "en-US",
+		"en_us":      "en-US",
+		"EN":         "en",
+		"zh-hant-tw": "zh-Hant-TW",
+		"es-419":     "es-419",
+		"English":    "en-US",
+		"中文":         "zh-CN",
+		"繁體中文":       "zh-TW",
+		"japanese":   "ja-JP",
+	} {
+		if got, err := resolveLanguage(in); err != nil || got != want {
+			t.Errorf("resolveLanguage(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"en US", "e", "1x-US", "en--US", "Klingon!"} {
+		if _, err := resolveLanguage(in); err == nil {
+			t.Errorf("resolveLanguage(%q) accepted", in)
 		}
 	}
 }

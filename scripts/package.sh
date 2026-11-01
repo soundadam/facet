@@ -4,12 +4,12 @@
 # (https://github.com/soundadam/appkit#发布产物):
 #
 #   facet-<ver>-<os>-<arch>.tar.gz   macOS and Linux
+#   facet-<ver>-windows-<arch>.zip   Windows
 #
-# each holding facet-<ver>-<os>-<arch>/facet with README.md, LICENSE and
-# THIRD_PARTY_LICENSES. There is no Windows build: the supervisor relies on
-# Unix sessions and signals. The version is injected as main.version; the release
-# workflow passes the tag without its leading "v". Linux runs the same script
-# as CI, and it needs GNU tar.
+# each holding facet-<ver>-<os>-<arch>/facet (facet.exe on Windows) with
+# README.md, LICENSE and THIRD_PARTY_LICENSES. The version is injected as
+# main.version; the release workflow passes the tag without its leading "v".
+# Linux runs the same script as CI, and it needs GNU tar and zip.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -52,22 +52,29 @@ third_party_licenses() {
 rm -rf dist
 mkdir -p dist
 
-for platform in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
+for platform in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
     goos=${platform%/*}
     goarch=${platform#*/}
     case $goos in darwin) os=macos ;; *) os=$goos ;; esac
     case $goarch in amd64) arch=x86_64 ;; arm64) arch=aarch64 ;; esac
     name="facet-$version-$os-$arch"
+    exe=facet
+    [ "$goos" = windows ] && exe=facet.exe
     mkdir -p "dist/$name"
     CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath \
         -ldflags "-s -w -buildid= -X main.version=$version" \
-        -o "dist/$name/facet" ./cmd/facet
+        -o "dist/$name/$exe" ./cmd/facet
     cp "${extras[@]}" "dist/$name/"
     third_party_licenses "$goos" "$goarch" >"dist/$name/THIRD_PARTY_LICENSES"
     touch -d "$mtime" "dist/$name" "dist/$name"/*
 
-    tar -C dist --sort=name --owner=0 --group=0 --numeric-owner \
-        --mtime="$mtime" -cf - "$name" | gzip -n >"dist/$name.tar.gz"
+    if [ "$goos" = windows ]; then
+        # Zip stores local times, so fix the zone; -X drops owner fields.
+        (cd dist && find "$name" | LC_ALL=C sort | TZ=UTC zip -qX -@ "$name.zip")
+    else
+        tar -C dist --sort=name --owner=0 --group=0 --numeric-owner \
+            --mtime="$mtime" -cf - "$name" | gzip -n >"dist/$name.tar.gz"
+    fi
     rm -rf "dist/${name:?}"
 done
 

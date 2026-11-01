@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -37,8 +35,8 @@ func (f *editFlags) register(flags *pflag.FlagSet, rename bool) {
 		flags.StringVar(&f.name, "name", "", "rename the profile")
 	}
 	flags.StringVar(&f.proxy, "proxy", "", `upstream proxy URL (http, https, socks5, socks5h), or "direct"; a password left out of the URL is asked for`)
-	flags.StringVar(&f.timezone, "timezone", "", `IANA time zone the browser reports, e.g. America/New_York ("" clears)`)
-	flags.StringVar(&f.lang, "lang", "", "browser UI and navigator language, e.g. en-US")
+	flags.StringVar(&f.timezone, "timezone", "", `time zone the browser reports: an IANA name such as America/New_York or a city such as "Las Vegas", Singapore, 东京 (see facet zones; "" clears)`)
+	flags.StringVar(&f.lang, "lang", "", "browser UI and navigator language: a tag such as en-US, zh-CN, ja-JP, or a name such as English, 中文")
 	flags.StringVar(&f.acceptLang, "accept-lang", "", "Accept-Language list; derived from --lang when unset")
 	flags.StringVar(&f.brand, "brand", "", "browser brand in the UA and client hints: Chrome, Edge, Opera, Vivaldi")
 	flags.StringVar(&f.brandVersion, "brand-version", "", "brand version; the kernel's own when unset")
@@ -58,16 +56,20 @@ func (app *App) apply(cmd *cobra.Command, p *profile.Profile, f *editFlags) (pro
 		p.Name = f.name
 	}
 	if changed("timezone") {
-		if err := checkTimezone(f.timezone); err != nil {
+		tz, err := resolveTimezone(f.timezone)
+		if err != nil {
 			return false, "", false, err
 		}
-		p.Locale.Timezone = f.timezone
+		app.noteResolved(f.timezone, tz)
+		p.Locale.Timezone = tz
 	}
 	if changed("lang") {
-		if err := checkLanguage(f.lang); err != nil {
+		lang, err := resolveLanguage(f.lang)
+		if err != nil {
 			return false, "", false, err
 		}
-		p.Locale.Language = f.lang
+		app.noteResolved(f.lang, lang)
+		p.Locale.Language = lang
 	}
 	if changed("accept-lang") {
 		p.Locale.AcceptLanguage = strings.ReplaceAll(f.acceptLang, " ", "")
@@ -107,23 +109,11 @@ func (app *App) apply(cmd *cobra.Command, p *profile.Profile, f *editFlags) (pro
 	return false, "", false, nil
 }
 
-func checkTimezone(tz string) error {
-	if tz == "" {
-		return nil
+// noteResolved says what a city or language name was taken to mean.
+func (app *App) noteResolved(typed, resolved string) {
+	if typed = strings.TrimSpace(typed); typed != resolved {
+		fmt.Fprintf(app.Err, "note: %s → %s\n", typed, resolved)
 	}
-	if _, err := time.LoadLocation(tz); err != nil || !strings.Contains(tz, "/") && tz != "UTC" {
-		return fmt.Errorf("timezone %q: not an IANA zone name such as Europe/Berlin", tz)
-	}
-	return nil
-}
-
-func checkLanguage(lang string) error {
-	for _, r := range lang {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
-			return fmt.Errorf("language %q: use a BCP 47 tag such as en-US", lang)
-		}
-	}
-	return nil
 }
 
 // readPassword asks for the proxy password on the terminal, or reads one
@@ -557,7 +547,7 @@ func (app *App) supervise(ctx context.Context, p *profile.Profile, kernel *launc
 			return fmt.Errorf("read the proxy password from the keychain: %w", err)
 		}
 	}
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop := launch.NotifyStop(ctx)
 	defer stop()
 	s := &launch.Supervisor{
 		Store:    app.Store,

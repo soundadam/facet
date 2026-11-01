@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -336,6 +337,14 @@ func (m *uiModel) updateForm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.submitForm()
 	case "ctrl+s":
 		return m.submitForm()
+	case "left", "right":
+		delta := 1
+		if msg.String() == "left" {
+			delta = -1
+		}
+		if f.cycle(delta) {
+			return m, nil
+		}
 	}
 	return m, f.update(msg)
 }
@@ -367,6 +376,10 @@ type uiField struct {
 	label string
 	hint  string
 	input textinput.Model
+	// presets are the values ←/→ step through while the field is empty or
+	// holds one of them; describe explains the current value above hint.
+	presets  []string
+	describe func(string) string
 }
 
 type uiForm struct {
@@ -422,10 +435,14 @@ func newProfileForm(p *profile.Profile, passwordState string, width int) *uiForm
 	}
 	pw := add("password", "password", pwHint, "")
 	pw.EchoMode = textinput.EchoPassword
-	add("timezone", "timezone", "IANA zone matching the proxy's exit, e.g. America/New_York; → completes", p.Locale.Timezone).
-		SetSuggestions(commonZones)
-	add("language", "language", "e.g. en-US; → completes", p.Locale.Language).
+	add("timezone", "timezone", "←/→ common zones · or type an IANA name or a city: Las Vegas, New York, 东京", p.Locale.Timezone).
+		SetSuggestions(knownZones())
+	f.fields[len(f.fields)-1].presets = zonePresetValues()
+	f.fields[len(f.fields)-1].describe = describeZoneField
+	add("language", "language", "←/→ common languages · or type a tag such as de-AT or a name: English, 中文", p.Locale.Language).
 		SetSuggestions(commonLanguages)
+	f.fields[len(f.fields)-1].presets = languagePresetValues()
+	f.fields[len(f.fields)-1].describe = describeLanguageField
 	add("notes", "notes", "which account this is", p.Notes)
 	add("urls", "start pages", "space-separated URLs opened on launch", strings.Join(p.StartURLs, " "))
 	for i := range f.fields {
@@ -433,6 +450,48 @@ func newProfileForm(p *profile.Profile, passwordState string, width int) *uiForm
 	}
 	f.resize(width)
 	return f
+}
+
+func describeZoneField(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "unset: the browser reports this machine's zone, whatever the proxy's exit"
+	}
+	zone, err := resolveTimezone(v)
+	if err != nil {
+		return "not a zone or known city yet"
+	}
+	return arrowIfAlias(v, zone) + describeZone(zone, time.Now())
+}
+
+func describeLanguageField(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "unset: the browser uses this machine's language"
+	}
+	tag, err := resolveLanguage(v)
+	if err != nil {
+		return "not a language tag or known name yet"
+	}
+	return arrowIfAlias(v, tag) + describeLanguage(tag)
+}
+
+func arrowIfAlias(typed, resolved string) string {
+	if strings.TrimSpace(typed) != resolved {
+		return "→ "
+	}
+	return ""
+}
+
+// cycle steps the focused field through its presets, reporting whether
+// the key was used for that.
+func (f *uiForm) cycle(delta int) bool {
+	fl := &f.fields[f.focus]
+	i := slices.Index(fl.presets, fl.input.Value())
+	if fl.presets == nil || i < 0 {
+		return false
+	}
+	fl.input.SetValue(fl.presets[(i+delta+len(fl.presets))%len(fl.presets)])
+	fl.input.CursorEnd()
+	return true
 }
 
 func key2(keys ...string) key.Binding { return key.NewBinding(key.WithKeys(keys...)) }
@@ -495,11 +554,12 @@ func (app *App) saveForm(f *uiForm) (*profile.Profile, error) {
 		p.Name = name
 	}
 
-	tz, lang := f.value("timezone"), f.value("language")
-	if err := checkTimezone(tz); err != nil {
+	tz, err := resolveTimezone(f.value("timezone"))
+	if err != nil {
 		return nil, err
 	}
-	if err := checkLanguage(lang); err != nil {
+	lang, err := resolveLanguage(f.value("language"))
+	if err != nil {
 		return nil, err
 	}
 	if lang != p.Locale.Language {
@@ -708,8 +768,15 @@ func (m *uiModel) viewForm(b *strings.Builder) {
 			label = styleFormFocus.Render(fl.label)
 		}
 		b.WriteString("  " + label + fl.input.View() + "\n")
-		if i == f.focus && fl.hint != "" {
-			b.WriteString("  " + strings.Repeat(" ", labelWidth) + styleDim.Render(fl.hint) + "\n")
+		if i != f.focus {
+			continue
+		}
+		indent := "  " + strings.Repeat(" ", labelWidth)
+		if fl.describe != nil {
+			b.WriteString(indent + fl.describe(fl.input.Value()) + "\n")
+		}
+		if fl.hint != "" {
+			b.WriteString(indent + styleDim.Render(fl.hint) + "\n")
 		}
 	}
 	b.WriteString("\n")
@@ -718,7 +785,7 @@ func (m *uiModel) viewForm(b *strings.Builder) {
 	} else {
 		b.WriteString("\n")
 	}
-	b.WriteString(help("tab/↓", "next", "shift+tab/↑", "back", "→", "complete", "enter", "next / save on last", "ctrl+s", "save", "esc", "cancel"))
+	b.WriteString(help("tab/↓", "next", "shift+tab/↑", "back", "→", "complete / next preset", "enter", "next / save on last", "ctrl+s", "save", "esc", "cancel"))
 }
 
 func help(pairs ...string) string {

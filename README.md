@@ -11,7 +11,7 @@
 指纹全靠启动参数：种子、平台、品牌、时区、语言、代理，每次手敲，还要自己
 记哪个账号用了哪个种子。facet 把这些存成 profile，在终端里直接运行 `facet`
 就能列出、新建、编辑、打开和关闭它们；也可以用 `facet open` 这类子命令写脚本。
-支持 macOS 和 Linux，Go 编写。
+支持 macOS、Linux 和 Windows，Go 编写。
 
 ## 为什么是 facet
 
@@ -25,7 +25,7 @@
   桥一起消失，浏览器的请求直接失败，不会绕开代理用本机 IP 出去。facet
   会把这种状态标成 `running, bridge down`。
 - **密码不落盘**：代理密码存在系统钥匙串（macOS Keychain / Linux Secret
-  Service），`profile.toml` 里只有用户名。
+  Service / Windows 凭据管理器），`profile.toml` 里只有用户名。
 - **数据都在一个目录里**：cookie、登录状态、缓存全在 profile 自己的目录下，
   `facet wipe` 清掉浏览数据但保留指纹，`facet rm` 整个移进废纸篓。
 - **默认自洽**：平台默认与本机一致，此时 GPU 不伪装，WebGL 报的就是真显卡；
@@ -38,8 +38,15 @@
 `ungoogled-chromium_<版本>_macos.dmg`，装出来是 `Chromium.app`，但它是
 fingerprint-chromium，不是普通 ungoogled-chromium；官方 Chromium 或 Chrome
 不认 `--fingerprint` 参数，不能用。macOS 放到 `/Applications/Chromium.app`，
-Linux 把 `fingerprint-chromium` 放进 PATH。放在别处就设 `FACET_CHROMIUM`，
-指向 `.app` 或可执行文件都行。
+Linux 把 `fingerprint-chromium` 放进 PATH。Windows 用安装包装就行（装在
+`%LOCALAPPDATA%\Chromium\Application\`），或者把 zip 解压到
+`%LOCALAPPDATA%\facet\chromium\`，让 `chrome.exe` 直接在这个目录下。
+放在别处就设 `FACET_CHROMIUM`，指向 `.app` 或可执行文件都行。
+
+facet 本身在 macOS 和 Linux 上用 Homebrew 装；Windows 从
+[Releases](https://github.com/soundadam/facet/releases) 下载
+`facet-<版本>-windows-x86_64.zip`（ARM 机器用 `aarch64`），把 `facet.exe`
+放进 PATH，之后 `facet update` 自更新。
 
 ```sh
 brew trust --tap soundadam/tap
@@ -48,6 +55,7 @@ brew install --cask soundadam/tap/facet
 # 一个账号一个 profile；代理 URL 里不写密码，facet 会问你，然后存进钥匙串
 facet new shop-us --proxy socks5://alice@203.0.113.7:1080 \
   --timezone America/New_York --lang en-US
+facet new shop-lv --timezone "Las Vegas" --lang 中文   # 城市名和语言名也行
 
 facet                                    # 交互界面
 facet open shop-us                       # 启动
@@ -74,7 +82,10 @@ profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指�
 | `q` | 退出界面，已打开的浏览器继续运行 |
 
 新建和编辑是同一个表单：`tab` 或 `↓` 换下一项，`enter` 在最后一项保存，
-`ctrl+s` 随时保存，`esc` 取消。时区和语言输入开头后按 `→` 补全。密码框
+`ctrl+s` 随时保存，`esc` 取消。时区和语言框是空的或填着常用值时，按 `←` `→`
+在常用值里轮换（拉斯维加斯、纽约、新加坡、东京……；en-US、zh-CN、ja-JP……）；
+也可以直接输入 IANA 名、城市名（`Las Vegas`、`东京`）或语言名（`中文`），
+输入开头后按 `→` 补全。框下面实时显示换算结果、UTC 偏移和当地时间。密码框
 留空表示保留钥匙串里原有的密码。
 
 输出不是终端时（比如接管道），`facet` 退回成 `facet ls` 的表格。
@@ -92,13 +103,19 @@ profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指�
 | `facet stop PROFILE` | 关闭浏览器 |
 | `facet wipe PROFILE` | 把 cookie、登录、历史、缓存移进废纸篓；种子、代理、时区不变，下次打开像新装的浏览器 |
 | `facet rm PROFILE` | 把 profile 目录（含 cookie）移进废纸篓，并删掉钥匙串里的密码 |
+| `facet zones` | 列出常用时区（含当前 UTC 偏移和当地时间、对应城市）和语言 |
 | `facet update` / `facet version` | 自更新 / 版本 |
 
 `new` 和 `set` 共用这些选项：
 
 - `--proxy`：`http`、`https`、`socks5`、`socks5h`，或 `direct`。
-- `--timezone`：IANA 时区，如 `Asia/Tokyo`；传 `""` 清除。
-- `--lang`：界面语言和 `navigator.language`。
+- `--timezone`：IANA 时区，如 `Asia/Tokyo`。也认常用的城市和国家名，中英文
+  都行（`Las Vegas`、`纽约`、`Singapore`、`日本`），存成对应的 IANA 名；
+  `facet zones` 列出常用的。IANA 里没有 `America/Las_Vegas`，拉斯维加斯属于
+  `America/Los_Angeles`，写前者 facet 会自动换。传 `""` 清除。
+- `--lang`：界面语言和 `navigator.language`，BCP 47 标签如 `en-US`、`zh-CN`、
+  `ja-JP`。大小写和下划线会规范化（`en_us` → `en-US`），也认 `English`、
+  `中文`、`繁體中文`、`日本語` 这类名字。
 - `--accept-lang`：不设时由 `--lang` 推出，如 `en-US` → `en-US,en`。
 - `--brand`、`--brand-version`：UA 和 client hints 里的品牌，Chrome、Edge、
   Opera 或 Vivaldi。
@@ -111,7 +128,7 @@ profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指�
 ## 数据放在哪
 
 ```text
-~/Library/Application Support/facet/      macOS（Linux 是 ~/.config/facet/）
+~/Library/Application Support/facet/      macOS（Linux 是 ~/.config/facet/，Windows 是 %AppData%\facet\）
   profiles/<id>/profile.toml              设置，可以手改
   profiles/<id>/user-data/                Chromium 的 --user-data-dir：cookie、登录、历史、扩展
   profiles/<id>/cache/                    Chromium 的 --disk-cache-dir：HTTP 和代码缓存
@@ -120,7 +137,8 @@ profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指�
 ```
 
 设 `FACET_HOME` 可以换位置。代理密码在钥匙串里，服务名 `facet`，账户名
-`proxy:<id>`。
+`proxy:<id>`。Windows 上 `wipe` 和 `rm` 不进回收站，而是移到数据目录下的
+`trash\`，确认不要了自己删。
 
 profile 目录以外，Chromium 还会碰这几处：
 
@@ -159,6 +177,9 @@ profile 目录以外，Chromium 还会碰这几处：
 
 - facet 本身没有经过 Apple 公证。Homebrew 装的直接能用；从 Releases 下载的
   同样需要去掉隔离属性。
+- Windows 版在 CI 上编译并跑全部测试，但还没在真机上配真内核完整走过一遍，
+  遇到问题请提 issue。`facet.exe` 没有代码签名，第一次运行 SmartScreen 可能
+  拦一下，点「仍要运行」。
 - 指纹只是一层。同一个出口 IP 登多个账号、账号间的行为关联，facet 管不了。
 
 ## 开发
@@ -167,7 +188,7 @@ profile 目录以外，Chromium 还会碰这几处：
 make build        # bin/facet
 make check        # gofmt、vet、测试
 make ci           # CI 跑的全部内容，含 -race
-make package VERSION=0.1.0   # 各平台压缩包到 dist/，需要 GNU tar
+make package VERSION=0.2.0   # 各平台压缩包到 dist/，需要 GNU tar 和 zip
 ```
 
 测试不会启动真浏览器：桥对着进程内的 HTTP / SOCKS5 代理测，启动器对着假的

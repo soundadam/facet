@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -249,14 +248,19 @@ func (s *Store) trashDir() (string, error) {
 	trash := s.Trash
 	if trash == "" {
 		var err error
-		if trash, err = defaultTrash(); err != nil {
+		if trash, err = s.defaultTrash(); err != nil {
 			return "", err
 		}
 	}
 	return trash, os.MkdirAll(trash, 0o700)
 }
 
-func defaultTrash() (string, error) {
+func (s *Store) defaultTrash() (string, error) {
+	if runtime.GOOS == "windows" {
+		// The Recycle Bin is only reachable through the shell API; a folder
+		// beside the profiles keeps the move a rename on the same volume.
+		return filepath.Join(s.Root, "trash"), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -316,14 +320,6 @@ func (s *Store) ClearRunState(id string) error {
 	return err
 }
 
-func alive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
-}
-
 var idEncoding = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
 
 func newID() (string, error) {
@@ -334,9 +330,11 @@ func newID() (string, error) {
 	return idEncoding.EncodeToString(b), nil
 }
 
+// sanitize makes name usable in a file name on every platform, Windows'
+// reserved characters included.
 func sanitize(name string) string {
 	return strings.Map(func(r rune) rune {
-		if r == '/' || r == ':' || r < 0x20 {
+		if r < 0x20 || strings.ContainsRune(`/\:*?"<>|`, r) {
 			return '_'
 		}
 		return r

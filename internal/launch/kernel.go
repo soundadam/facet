@@ -63,6 +63,9 @@ func Locate(ctx context.Context) (*Kernel, error) {
 
 func defaultCandidates() []string {
 	home, _ := os.UserHomeDir()
+	if runtime.GOOS == "windows" {
+		return windowsCandidates()
+	}
 	if runtime.GOOS == "darwin" {
 		return []string{"/Applications/Chromium.app", filepath.Join(home, "Applications", "Chromium.app")}
 	}
@@ -73,6 +76,26 @@ func defaultCandidates() []string {
 		}
 	}
 	return append(out, filepath.Join(home, ".local", "share", "facet", "chromium", "chrome"))
+}
+
+// windowsCandidates covers the unpacked zip (facet's own folder) and the
+// installer, which puts Chromium under Application for one or all users.
+func windowsCandidates() []string {
+	var out []string
+	for _, name := range []string{"fingerprint-chromium.exe", "chrome.exe"} {
+		if p, err := exec.LookPath(name); err == nil {
+			out = append(out, p)
+		}
+	}
+	if d := os.Getenv("LOCALAPPDATA"); d != "" {
+		out = append(out,
+			filepath.Join(d, "facet", "chromium", "chrome.exe"),
+			filepath.Join(d, "Chromium", "Application", "chrome.exe"))
+	}
+	if d := os.Getenv("ProgramFiles"); d != "" {
+		out = append(out, filepath.Join(d, "Chromium", "Application", "chrome.exe"))
+	}
+	return out
 }
 
 // resolveExe maps an .app bundle to its executable.
@@ -96,6 +119,13 @@ func readVersion(ctx context.Context, exe, bundle string) (string, error) {
 		// Reading Info.plist avoids starting the browser.
 		out, err = exec.CommandContext(ctx, "plutil", "-extract", "CFBundleShortVersionString", "raw",
 			filepath.Join(bundle, "Contents", "Info.plist")).Output()
+	} else if runtime.GOOS == "windows" {
+		// chrome.exe --version prints nothing on Windows; the build ships a
+		// <version>.manifest file or <version> folder beside it instead.
+		if v := siblingVersion(filepath.Dir(exe)); v != "" {
+			return v, nil
+		}
+		return "", fmt.Errorf("read version: no <version>.manifest or <version> folder beside %s", exe)
 	} else {
 		out, err = exec.CommandContext(ctx, exe, "--version").Output()
 	}
@@ -107,4 +137,35 @@ func readVersion(ctx context.Context, exe, bundle string) (string, error) {
 		return "", errors.New("read version: no version in " + strings.TrimSpace(string(out)))
 	}
 	return m, nil
+}
+
+var siblingPattern = regexp.MustCompile(`^(\d+\.\d+\.\d+\.\d+)(\.manifest)?$`)
+
+// siblingVersion returns the newest version named by a file or folder in
+// dir, or "" when there is none.
+func siblingVersion(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	best := ""
+	for _, e := range entries {
+		m := siblingPattern.FindStringSubmatch(e.Name())
+		if m != nil && (best == "" || versionLess(best, m[1])) {
+			best = m[1]
+		}
+	}
+	return best
+}
+
+func versionLess(a, b string) bool {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := range pa {
+		x, _ := strconv.Atoi(pa[i])
+		y, _ := strconv.Atoi(pb[i])
+		if x != y {
+			return x < y
+		}
+	}
+	return false
 }

@@ -27,6 +27,7 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
+          - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -36,4 +37,18 @@ jobs:
           go-version-file: go.mod
 
       - name: make ci
+        if: runner.os != 'Windows'
         run: make ci GOTOOLCHAIN=local
+
+      # No make on the Windows runner, and gofmt would trip over its CRLF
+      # checkout; formatting is already checked on the other two.
+      - name: vet, test and build
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          go mod verify
+          go vet ./...
+          go test ./...
+          go build -o bin/facet.exe ./cmd/facet

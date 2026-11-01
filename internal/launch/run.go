@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/soundadam/facet/internal/bridge"
@@ -91,7 +90,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		return err
 	case <-ctx.Done():
 		s.Logger.Printf("stopping browser (pid %d)", cmd.Process.Pid)
-		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = terminate(cmd.Process)
 		select {
 		case <-exited:
 		case <-time.After(10 * time.Second):
@@ -133,7 +132,7 @@ func Detach(ctx context.Context, store *profile.Store, p *profile.Profile, urls 
 	// The child must see the same store even when it came from a flag.
 	cmd.Env = append(os.Environ(), "FACET_HOME="+store.Root)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = devNull, logFile, logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start supervisor: %w", err)
 	}
@@ -181,16 +180,6 @@ func NewWindow(k *Kernel, userDataDir string, urls []string) error {
 		// Not forwarded within a reasonable time; leave it to finish on its own.
 		return errors.New("open window: the running browser did not answer within 15s")
 	}
-}
-
-// Stop asks a running profile's supervisor to quit the browser, or the
-// browser itself when the supervisor is gone.
-func Stop(state *profile.RunState) error {
-	pid := state.SupervisorPID
-	if state.Orphaned() {
-		pid = state.BrowserPID
-	}
-	return syscall.Kill(pid, syscall.SIGTERM)
 }
 
 func logTail(path string, n int) string {
