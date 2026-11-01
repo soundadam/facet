@@ -3,7 +3,7 @@ title: facet
 excerpt: A free, open-source fingerprint browser manager for the terminal. Each account gets its own fingerprint, cookies, proxy and time zone, in its own window.
 weight: 50
 presentation:
-  category: Fingerprint browser / TUI · macOS + Linux
+  category: Fingerprint browser / TUI · macOS + Linux + Windows
   label: Install with Homebrew
   command:
     - brew trust --tap soundadam/tap
@@ -14,12 +14,12 @@ registry:
   homebrew: soundadam/tap/facet
   docs: https://github.com/soundadam/facet#readme
 release:
-  version: "0.1.0"
+  version: "0.2.0"
   license: MIT
 modules:
   - type: promo
     description: Running many accounts means giving each one its own computer. {title} builds on the open-source fingerprint-chromium engine. It stores the fingerprint seed, platform, proxy, time zone and language as a profile that you create, open and close from a terminal interface, and no profile sees another's cookies or logins.
-    line: "{title} {version} is a free, {license}-licensed tool for macOS and Linux, on Intel and ARM. No sign-up and no subscription."
+    line: "{title} {version} is a free, {license}-licensed tool for macOS, Linux and Windows, on Intel and ARM. No sign-up and no subscription."
     actions:
       - label: Docs (Chinese)
         url: "{docs}"
@@ -35,8 +35,8 @@ modules:
         label: No per-profile fee and no profile limit
       - value: "3"
         label: "Platforms to present as: macOS, Windows, Linux"
-      - value: "4"
-        label: "Release builds: macOS and Linux, each on x86_64 and ARM"
+      - value: "6"
+        label: "Release builds: macOS, Linux and Windows, each on x86_64 and ARM"
       - value: "{version}"
         label: "Current release · {license}"
 

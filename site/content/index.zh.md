@@ -3,7 +3,7 @@ title: facet
 excerpt: 免费开源的指纹浏览器管理器，在终端里管多账号：一个账号一套指纹、cookie、代理和时区，各开各的窗口。
 weight: 50
 presentation:
-  category: 指纹浏览器 / TUI · macOS + Linux
+  category: 指纹浏览器 / TUI · macOS + Linux + Windows
   label: 用 Homebrew 安装
   command:
     - brew trust --tap soundadam/tap
@@ -14,12 +14,12 @@ registry:
   homebrew: soundadam/tap/facet
   docs: https://github.com/soundadam/facet#readme
 release:
-  version: "0.1.0"
+  version: "0.2.0"
   license: MIT
 modules:
   - type: promo
     description: 多账号运营要的是每个账号一台「独立的电脑」。{title} 基于开源内核 fingerprint-chromium，把指纹种子、平台、代理、时区、语言存成 profile，在终端界面里新建、打开、关闭，每个 profile 的 cookie 和登录状态互不相通。
-    line: "{title} {version} 是 {license} 开源的免费工具，支持 macOS 和 Linux（Intel 与 ARM），不需要注册，不收订阅费。"
+    line: "{title} {version} 是 {license} 开源的免费工具，支持 macOS、Linux 和 Windows（Intel 与 ARM），不需要注册，不收订阅费。"
     actions:
       - label: 文档
         url: "{docs}"
@@ -35,8 +35,8 @@ modules:
         label: 不按 profile 收费，不限数量
       - value: "3"
         label: 可伪装的平台：macOS、Windows、Linux
-      - value: "4"
-        label: 发布平台：macOS 与 Linux，各有 x86_64 和 ARM
+      - value: "6"
+        label: 发布平台：macOS、Linux 与 Windows，各有 x86_64 和 ARM
       - value: "{version}"
         label: "当前版本 · {license}"
 
