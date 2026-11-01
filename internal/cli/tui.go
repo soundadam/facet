@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -81,7 +83,12 @@ type uiModel struct {
 	selectID  string
 	status    string
 	statusErr bool
+	// download is the kernel download under way, if any.
+	download *uiDownload
 }
+
+// uiDownload is written by the download and read by View.
+type uiDownload struct{ done, total atomic.Int64 }
 
 type uiConfirm struct {
 	prompt string
@@ -92,6 +99,7 @@ type uiConfirm struct {
 
 type (
 	tickMsg   struct{}
+	dlTickMsg struct{}
 	loadedMsg struct {
 		rows []uiRow
 		err  error
@@ -176,6 +184,11 @@ func (m *uiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rows[i].state, _ = m.app.Store.RunState(m.rows[i].p.ID)
 		}
 		return m, tick()
+	case dlTickMsg:
+		if m.download == nil {
+			return m, nil
+		}
+		return m, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return dlTickMsg{} })
 	case loadedMsg:
 		keep := m.selectID
 		if r := m.selected(); keep == "" && r != nil {
@@ -192,6 +205,13 @@ func (m *uiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case doneMsg:
 		delete(m.busy, msg.id)
+		m.download = nil
+		if errors.Is(msg.err, launch.ErrNoKernel) && os.Getenv("FACET_CHROMIUM") == "" {
+			if r := m.selected(); r != nil && r.p.ID == msg.id {
+				m.offerKernel(r.p, msg.err)
+				return m, nil
+			}
+		}
 		if msg.err != nil {
 			m.setStatus(msg.err.Error(), true)
 		} else {
@@ -310,6 +330,7 @@ func (m *uiModel) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	c := m.confirm
 	m.confirm, m.mode = nil, modeList
 	if msg.String() != "y" {
+		m.download = nil
 		m.setStatus("cancelled", false)
 		return m, nil
 	}
@@ -317,7 +338,48 @@ func (m *uiModel) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if r == nil || r.p.ID != c.id {
 		return m, nil
 	}
-	return m, m.do(r.p, c.verb, true, c.run)
+	cmd := m.do(r.p, c.verb, true, c.run)
+	if m.download != nil {
+		return m, tea.Batch(cmd, func() tea.Msg { return dlTickMsg{} })
+	}
+	return m, cmd
+}
+
+// offerKernel asks to download fingerprint-chromium after opening p failed
+// for want of one, then opens p.
+func (m *uiModel) offerKernel(p *profile.Profile, err error) {
+	dl := &uiDownload{}
+	m.download = dl
+	m.confirm = &uiConfirm{
+		prompt: fmt.Sprintf("%s.\nDownload upstream's latest build from github.com/%s and open #%d %s?", err, launch.UpstreamRepo, p.Serial, p.Name),
+		id:     p.ID,
+		verb:   "downloading fingerprint-chromium for",
+		run: func() (string, error) {
+			progress := func(done, total int64) { dl.total.Store(total); dl.done.Store(done) }
+			k, err := m.app.installKernel(m.ctx, "", true, progress, func(string, ...any) {})
+			if err != nil {
+				return "", err
+			}
+			msg, err := m.app.openProfile(m.ctx, p, nil)
+			return fmt.Sprintf("installed fingerprint-chromium %s; %s", k.Version, msg), err
+		},
+	}
+	m.mode = modeConfirm
+}
+
+// downloadStatus describes the kernel download under way, or "".
+func (m *uiModel) downloadStatus() string {
+	if m.download == nil {
+		return ""
+	}
+	done, total := m.download.done.Load(), m.download.total.Load()
+	switch {
+	case total <= 0:
+		return ""
+	case done >= total:
+		return "unpacking fingerprint-chromium…"
+	}
+	return fmt.Sprintf("downloading fingerprint-chromium… %d%% of %s", done*100/total, sizeMB(total))
 }
 
 func (m *uiModel) updateForm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -674,7 +736,9 @@ func (m *uiModel) viewList(b *strings.Builder) {
 		b.WriteString(styleWarn.Render(m.confirm.prompt) + "  " + styleKey.Render("y") + "/N\n")
 		return
 	}
-	if m.status != "" {
+	if s := m.downloadStatus(); s != "" {
+		b.WriteString(styleWarn.Render(s) + "\n")
+	} else if m.status != "" {
 		st := styleDim
 		if m.statusErr {
 			st = styleErr

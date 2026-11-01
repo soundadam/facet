@@ -33,15 +33,18 @@
 
 ## 快速开始
 
-先从 [fingerprint-chromium 的 Releases](https://github.com/adryfish/fingerprint-chromium/releases)
-装好内核（142 及以上，推荐 148）。macOS 的安装包文件名叫
-`ungoogled-chromium_<版本>_macos.dmg`，装出来是 `Chromium.app`，但它是
-fingerprint-chromium，不是普通 ungoogled-chromium；官方 Chromium 或 Chrome
-不认 `--fingerprint` 参数，不能用。macOS 放到 `/Applications/Chromium.app`，
-Linux 把 `fingerprint-chromium` 放进 PATH。Windows 用安装包装就行（装在
-`%LOCALAPPDATA%\Chromium\Application\`），或者把 zip 解压到
-`%LOCALAPPDATA%\facet\chromium\`，让 `chrome.exe` 直接在这个目录下。
-放在别处就设 `FACET_CHROMIUM`，指向 `.app` 或可执行文件都行。
+facet 不自带浏览器，内核用上游
+[fingerprint-chromium](https://github.com/adryfish/fingerprint-chromium/releases)
+（142 及以上）。`facet kernel install` 从上游 GitHub Releases 下载本机对应的
+构建，按 GitHub 公布的 SHA-256 校验后解压到 facet 自己的目录；第一次
+`facet open` 时没找到内核，facet 也会问你要不要下载。上游目前有 macOS
+（Apple 芯片）、Linux x86_64 和 Windows x64 的构建，Intel Mac 没有。
+
+已经自己装过的也能用：macOS 的 `/Applications/Chromium.app`、Linux PATH 里的
+`fingerprint-chromium`、Windows 安装包装到的 `%LOCALAPPDATA%\Chromium\Application\`
+都会被找到；放在别处就设 `FACET_CHROMIUM`，指向 `.app` 或可执行文件都行。
+上游的文件名叫 `ungoogled-chromium_…`，但它是 fingerprint-chromium；官方
+Chromium 或 Chrome 不认 `--fingerprint` 参数，不能用。
 
 facet 本身在 macOS 和 Linux 上用 Homebrew 装；Windows 从
 [Releases](https://github.com/soundadam/facet/releases) 下载
@@ -51,6 +54,7 @@ facet 本身在 macOS 和 Linux 上用 Homebrew 装；Windows 从
 ```sh
 brew trust --tap soundadam/tap
 brew install --cask soundadam/tap/facet
+facet kernel install                     # 下载内核；facet kernel 看当前版本和上游最新版
 
 # 一个账号一个 profile；代理 URL 里不写密码，facet 会问你，然后存进钥匙串
 facet new shop-us --proxy socks5://alice@203.0.113.7:1080 \
@@ -104,6 +108,8 @@ profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指�
 | `facet wipe PROFILE` | 把 cookie、登录、历史、缓存移进废纸篓；种子、代理、时区不变，下次打开像新装的浏览器 |
 | `facet rm PROFILE` | 把 profile 目录（含 cookie）移进废纸篓，并删掉钥匙串里的密码 |
 | `facet zones` | 列出常用时区（含当前 UTC 偏移和当地时间、对应城市）和语言 |
+| `facet kernel` | 显示正在用的内核、它从哪来，以及上游有没有更新的本机构建 |
+| `facet kernel install [VERSION\|FILE]` | 从上游 Releases 下载并校验内核；`VERSION` 可写 `148` 这样的大版本，`FILE` 装自己下好的压缩包。要先关掉所有 profile |
 | `facet update` / `facet version` | 自更新 / 版本 |
 
 `new` 和 `set` 共用这些选项：
@@ -136,7 +142,10 @@ profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指�
   profiles/<id>/facet.log                 上一次运行的日志，启动失败先看这里
 ```
 
-设 `FACET_HOME` 可以换位置。代理密码在钥匙串里，服务名 `facet`，账户名
+`facet kernel install` 装的内核在 `~/Library/Application Support/facet/chromium/`
+（Linux 是 `~/.local/share/facet/chromium/`，Windows 是 `%LOCALAPPDATA%\facet\chromium\`），
+facet 找内核时先看这里。设 `FACET_HOME` 可以换位置，内核也跟着放到
+`$FACET_HOME/chromium/`。代理密码在钥匙串里，服务名 `facet`，账户名
 `proxy:<id>`。Windows 上 `wipe` 和 `rm` 不进回收站，而是移到数据目录下的
 `trash\`，确认不要了自己删。
 
@@ -167,9 +176,14 @@ profile 目录以外，Chromium 还会碰这几处：
 
 ## 注意
 
-- 用浏览器下载的 Chromium.app 带隔离属性，macOS 会把它放进 App Translocation
-  的随机路径里运行。用 facet 前先打开一次并在「隐私与安全性」里允许，或者
-  自己去掉：
+- 连不上 GitHub 时，用别的办法（镜像、网盘）下好上游的压缩包：macOS 的
+  `.dmg`、Linux 的 `.tar.xz`、Windows 的 `.zip`，再
+  `facet kernel install <文件>`。能查到上游的 SHA-256 就校验，查不到会提示
+  未校验。下载走 `https_proxy` 等环境变量里的代理。Linux 解压 `.tar.xz` 需要
+  系统里有 `xz`。
+- `facet kernel install` 装的 Chromium.app 没有隔离属性，可以直接用。自己用
+  浏览器下载的带隔离属性，macOS 会把它放进 App Translocation 的随机路径里
+  运行。用 facet 前先打开一次并在「隐私与安全性」里允许，或者自己去掉：
 
   ```sh
   xattr -dr com.apple.quarantine /Applications/Chromium.app

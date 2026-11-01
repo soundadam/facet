@@ -30,8 +30,13 @@ type Kernel struct {
 	Major   int
 }
 
+// ErrNoKernel marks the errors Locate returns when there is no usable
+// kernel: none found, or only one older than MinMajor.
+var ErrNoKernel = errors.New("no usable fingerprint-chromium")
+
 // Locate finds the kernel: $FACET_CHROMIUM (an .app bundle or an
-// executable), else the platform's usual install locations.
+// executable), else the one facet kernel install put in ManagedDir, else
+// the platform's usual install locations.
 func Locate(ctx context.Context) (*Kernel, error) {
 	var candidates []string
 	if v := os.Getenv("FACET_CHROMIUM"); v != "" {
@@ -41,45 +46,98 @@ func Locate(ctx context.Context) (*Kernel, error) {
 	}
 	var tried []string
 	for _, c := range candidates {
-		exe, bundle := resolveExe(c)
-		if info, err := os.Stat(exe); err != nil || info.IsDir() {
+		k, err := Inspect(ctx, c)
+		if errors.Is(err, os.ErrNotExist) {
 			tried = append(tried, c)
 			continue
 		}
-		version, err := readVersion(ctx, exe, bundle)
-		if err != nil {
-			return nil, fmt.Errorf("kernel %s: %w", c, err)
-		}
-		major, _ := strconv.Atoi(strings.SplitN(version, ".", 2)[0])
-		k := &Kernel{Exe: exe, Version: version, Major: major}
-		if major < MinMajor {
-			return k, fmt.Errorf("kernel %s is Chromium %s; facet needs fingerprint-chromium %d or newer", c, version, MinMajor)
-		}
-		return k, nil
+		return k, err
 	}
-	return nil, fmt.Errorf("fingerprint-chromium not found (looked in %s); install it from https://github.com/adryfish/fingerprint-chromium/releases or set FACET_CHROMIUM",
-		strings.Join(tried, ", "))
+	hint := "run `facet kernel install` to download it from https://github.com/" + UpstreamRepo + "/releases, or set FACET_CHROMIUM"
+	if os.Getenv("FACET_CHROMIUM") != "" {
+		hint = "fix or unset FACET_CHROMIUM"
+	}
+	return nil, fmt.Errorf("%w: fingerprint-chromium not found (looked in %s); %s", ErrNoKernel, strings.Join(tried, ", "), hint)
+}
+
+// UpstreamRepo is fingerprint-chromium's GitHub repository.
+const UpstreamRepo = "adryfish/fingerprint-chromium"
+
+// Inspect reads the kernel at path, an .app bundle or an executable. It
+// returns an error wrapping os.ErrNotExist when nothing is there, and the
+// kernel together with an ErrNoKernel error when it is too old.
+func Inspect(ctx context.Context, path string) (*Kernel, error) {
+	exe, bundle := resolveExe(path)
+	if info, err := os.Stat(exe); err != nil || info.IsDir() {
+		return nil, fmt.Errorf("kernel %s: %w", path, os.ErrNotExist)
+	}
+	version, err := readVersion(ctx, exe, bundle)
+	if err != nil {
+		return nil, fmt.Errorf("kernel %s: %w", path, err)
+	}
+	major, _ := strconv.Atoi(strings.SplitN(version, ".", 2)[0])
+	k := &Kernel{Exe: exe, Version: version, Major: major}
+	if major < MinMajor {
+		return k, fmt.Errorf("%w: kernel %s is Chromium %s; facet needs fingerprint-chromium %d or newer (facet kernel install gets one)", ErrNoKernel, path, version, MinMajor)
+	}
+	return k, nil
+}
+
+// ManagedDir is where facet kernel install keeps the kernel: chromium in
+// $FACET_HOME when that is set, else in the per-user application data
+// (~/Library/Application Support/facet on macOS, $XDG_DATA_HOME/facet or
+// ~/.local/share/facet on Linux, %LOCALAPPDATA%\facet on Windows).
+func ManagedDir() string {
+	if v := os.Getenv("FACET_HOME"); v != "" {
+		return filepath.Join(v, "chromium")
+	}
+	home, _ := os.UserHomeDir()
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(home, "Library", "Application Support", "facet", "chromium")
+	case "windows":
+		if d := os.Getenv("LOCALAPPDATA"); d != "" {
+			return filepath.Join(d, "facet", "chromium")
+		}
+		return filepath.Join(home, "AppData", "Local", "facet", "chromium")
+	}
+	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
+		return filepath.Join(d, "facet", "chromium")
+	}
+	return filepath.Join(home, ".local", "share", "facet", "chromium")
+}
+
+// ManagedExe is the kernel path inside dir, laid out as facet kernel
+// install leaves it.
+func ManagedExe(dir string) string {
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(dir, "Chromium.app")
+	case "windows":
+		return filepath.Join(dir, "chrome.exe")
+	}
+	return filepath.Join(dir, "chrome")
 }
 
 func defaultCandidates() []string {
+	out := []string{ManagedExe(ManagedDir())}
 	home, _ := os.UserHomeDir()
 	if runtime.GOOS == "windows" {
-		return windowsCandidates()
+		return append(out, windowsCandidates()...)
 	}
 	if runtime.GOOS == "darwin" {
-		return []string{"/Applications/Chromium.app", filepath.Join(home, "Applications", "Chromium.app")}
+		return append(out, "/Applications/Chromium.app", filepath.Join(home, "Applications", "Chromium.app"))
 	}
-	var out []string
 	for _, name := range []string{"fingerprint-chromium", "chromium", "chrome"} {
 		if p, err := exec.LookPath(name); err == nil {
 			out = append(out, p)
 		}
 	}
-	return append(out, filepath.Join(home, ".local", "share", "facet", "chromium", "chrome"))
+	return out
 }
 
-// windowsCandidates covers the unpacked zip (facet's own folder) and the
-// installer, which puts Chromium under Application for one or all users.
+// windowsCandidates covers the installer, which puts Chromium under
+// Application for one or all users.
 func windowsCandidates() []string {
 	var out []string
 	for _, name := range []string{"fingerprint-chromium.exe", "chrome.exe"} {
@@ -88,9 +146,7 @@ func windowsCandidates() []string {
 		}
 	}
 	if d := os.Getenv("LOCALAPPDATA"); d != "" {
-		out = append(out,
-			filepath.Join(d, "facet", "chromium", "chrome.exe"),
-			filepath.Join(d, "Chromium", "Application", "chrome.exe"))
+		out = append(out, filepath.Join(d, "Chromium", "Application", "chrome.exe"))
 	}
 	if d := os.Getenv("ProgramFiles"); d != "" {
 		out = append(out, filepath.Join(d, "Chromium", "Application", "chrome.exe"))
@@ -151,18 +207,25 @@ func siblingVersion(dir string) string {
 	best := ""
 	for _, e := range entries {
 		m := siblingPattern.FindStringSubmatch(e.Name())
-		if m != nil && (best == "" || versionLess(best, m[1])) {
+		if m != nil && (best == "" || VersionLess(best, m[1])) {
 			best = m[1]
 		}
 	}
 	return best
 }
 
-func versionLess(a, b string) bool {
+// VersionLess compares dotted versions numerically; a missing part counts
+// as 0.
+func VersionLess(a, b string) bool {
 	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
-	for i := range pa {
-		x, _ := strconv.Atoi(pa[i])
-		y, _ := strconv.Atoi(pb[i])
+	for i := range max(len(pa), len(pb)) {
+		var x, y int
+		if i < len(pa) {
+			x, _ = strconv.Atoi(pa[i])
+		}
+		if i < len(pb) {
+			y, _ = strconv.Atoi(pb[i])
+		}
 		if x != y {
 			return x < y
 		}

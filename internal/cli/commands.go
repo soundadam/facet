@@ -424,12 +424,12 @@ The browser's log is in the profile directory (facet show PROFILE).`,
 			if err != nil {
 				return err
 			}
+			kernel, err := app.ensureKernel(ctx)
+			if err != nil {
+				return err
+			}
 			if foreground {
 				if state, _ := app.Store.RunState(p.ID); state == nil {
-					kernel, err := launch.Locate(ctx)
-					if err != nil {
-						return err
-					}
 					return app.supervise(ctx, p, kernel, args[1:])
 				}
 			}

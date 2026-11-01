@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/zalando/go-keyring"
 
+	"github.com/soundadam/facet/internal/launch"
 	"github.com/soundadam/facet/internal/profile"
 	"github.com/soundadam/facet/internal/secret"
 )
@@ -226,5 +228,33 @@ func TestListKeys(t *testing.T) {
 	}
 	if !strings.Contains(m.View().Content, "one") {
 		t.Fatal("view lacks the remaining profile")
+	}
+}
+
+func TestOpenWithoutKernelOffersDownload(t *testing.T) {
+	app := testApp(t)
+	t.Setenv("FACET_CHROMIUM", "")
+	p, err := profile.New("one", profile.PlatformLinux, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Store.Create(p); err != nil {
+		t.Fatal(err)
+	}
+	m := &uiModel{app: app, busy: map[string]string{}}
+	m.Update(m.load()())
+	missing := fmt.Errorf("%w: fingerprint-chromium not found", launch.ErrNoKernel)
+	m.Update(doneMsg{id: m.rows[0].p.ID, err: missing})
+	if m.mode != modeConfirm || !strings.Contains(m.confirm.prompt, "Download") {
+		t.Fatalf("mode %v, confirm %+v", m.mode, m.confirm)
+	}
+	m.download.total.Store(200_000_000)
+	m.download.done.Store(50_000_000)
+	if s := m.downloadStatus(); !strings.Contains(s, "25% of 200 MB") {
+		t.Fatalf("download status %q", s)
+	}
+	m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
+	if m.mode != modeList || m.download != nil {
+		t.Fatalf("cancel left mode %v, download %v", m.mode, m.download)
 	}
 }

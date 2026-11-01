@@ -89,6 +89,7 @@ authenticate to a proxy by itself.`,
 		app.newStopCommand(),
 		app.newRunCommand(),
 		app.newZonesCommand(),
+		app.newKernelCommand(),
 	)
 	appcli.AddCommands(root, app.Identity)
 	for _, command := range root.Commands() {
