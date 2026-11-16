@@ -36,8 +36,12 @@
 facet 不自带浏览器，内核用上游
 [fingerprint-chromium](https://github.com/adryfish/fingerprint-chromium/releases)
 （142 及以上）。`facet kernel install` 从上游 GitHub Releases 下载本机对应的
-构建，按 GitHub 公布的 SHA-256 校验后解压到 facet 自己的目录；第一次
-`facet open` 时没找到内核，facet 也会问你要不要下载。上游目前有 macOS
+构建，按 GitHub 公布的 SHA-256 校验后解压到 facet 自己的目录。用 Homebrew
+装 facet 时会顺带跑一次 `facet kernel install --if-missing --download-only`：
+已经有能用的内核就跳过，否则只下载校验、先放在 `chromium-pending/`（brew 的
+沙盒里挂不了 dmg），facet 第一次找内核时自动解压，不问也不用交互，脚本和
+agent 直接用就行；下载失败也不影响 facet 本身装好。都没有的话，第一次
+`facet open` 时 facet 会问你要不要下载。上游目前有 macOS
 （Apple 芯片）、Linux x86_64 和 Windows x64 的构建，Intel Mac 没有。
 
 已经自己装过的也能用：macOS 的 `/Applications/Chromium.app`、Linux PATH 里的
@@ -53,8 +57,8 @@ facet 本身在 macOS 和 Linux 上用 Homebrew 装；Windows 从
 
 ```sh
 brew trust --tap soundadam/tap
-brew install --cask soundadam/tap/facet
-facet kernel install                     # 下载内核；facet kernel 看当前版本和上游最新版
+brew install --cask soundadam/tap/facet  # 顺带下载内核（已有能用的就跳过）
+facet kernel                             # 看当前内核和上游最新版；没装上就 facet kernel install
 
 # 一个账号一个 profile；代理 URL 里不写密码，facet 会问你，然后存进钥匙串
 facet new shop-us --proxy socks5://alice@203.0.113.7:1080 \
@@ -109,7 +113,7 @@ profile 可以用序号（`1`、`#1`）、名字（不分大小写）或 ID 指�
 | `facet rm PROFILE` | 把 profile 目录（含 cookie）移进废纸篓，并删掉钥匙串里的密码 |
 | `facet zones` | 列出常用时区（含当前 UTC 偏移和当地时间、对应城市）和语言 |
 | `facet kernel` | 显示正在用的内核、它从哪来，以及上游有没有更新的本机构建 |
-| `facet kernel install [VERSION\|FILE]` | 从上游 Releases 下载并校验内核；`VERSION` 可写 `148` 这样的大版本，`FILE` 装自己下好的压缩包。要先关掉所有 profile |
+| `facet kernel install [VERSION\|FILE]` | 从上游 Releases 下载并校验内核；`VERSION` 可写 `148` 这样的大版本，`FILE` 装自己下好的压缩包，`--if-missing` 在已有能用的内核时什么都不做，`--download-only` 只下载校验、留到第一次用时再解压。要先关掉所有 profile |
 | `facet update` / `facet version` | 自更新 / 版本 |
 
 `new` 和 `set` 共用这些选项：

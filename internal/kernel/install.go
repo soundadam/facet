@@ -126,13 +126,18 @@ func download(ctx context.Context, a Asset, dst string, progress Progress) error
 	return checkDigest(h, a.Digest, a.Name)
 }
 
+// digestError says a file's SHA-256 is not the one upstream published.
+type digestError string
+
+func (e digestError) Error() string { return string(e) }
+
 func checkDigest(h hash.Hash, digest, name string) error {
 	want, ok := strings.CutPrefix(digest, "sha256:")
 	if !ok {
 		return fmt.Errorf("%s: unsupported digest %q", name, digest)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, want) {
-		return fmt.Errorf("%s: SHA-256 is %s, but upstream published %s; the file is damaged or not upstream's", name, got, want)
+		return digestError(fmt.Sprintf("%s: SHA-256 is %s, but upstream published %s; the file is damaged or not upstream's", name, got, want))
 	}
 	return nil
 }

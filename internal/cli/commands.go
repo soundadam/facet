@@ -448,7 +448,7 @@ The browser's log is in the profile directory (facet show PROFILE).`,
 // openProfile starts p in the background, or opens a new window when it
 // is already running, and describes what happened.
 func (app *App) openProfile(ctx context.Context, p *profile.Profile, urls []string) (string, error) {
-	kernel, err := launch.Locate(ctx)
+	kernel, err := app.locateKernel(ctx, nil)
 	if err != nil {
 		return "", err
 	}
@@ -527,7 +527,7 @@ func (app *App) newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			kernel, err := launch.Locate(cmd.Context())
+			kernel, err := app.locateKernel(cmd.Context(), nil)
 			if err != nil {
 				return err
 			}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -33,7 +34,7 @@ has a newer build for this machine. facet kernel install downloads one.`,
 }
 
 func (app *App) newKernelInstallCommand() *cobra.Command {
-	var force bool
+	var force, ifMissing, downloadOnly bool
 	cmd := &cobra.Command{
 		Use:   "install [VERSION | FILE]",
 		Short: "Download fingerprint-chromium from its GitHub releases",
@@ -47,8 +48,15 @@ FILE installs an archive you downloaded yourself (the .dmg on macOS, the
 .tar.xz on Linux, the .zip on Windows), e.g. through a mirror. It is checked
 against upstream's SHA-256 when GitHub can be reached.
 
+With --if-missing it does nothing when facet already finds a usable kernel
+(its own, /Applications/Chromium.app, one on PATH or FACET_CHROMIUM).
+--download-only fetches and checks the archive but leaves unpacking to the
+next time facet looks for a kernel and finds none. The Homebrew cask runs
+both after installing facet, since its sandbox cannot attach a disk image.
+
 Profiles must be stopped first. FACET_CHROMIUM, when set, still wins.`,
 		Example: `  facet kernel install
+  facet kernel install --if-missing
   facet kernel install 148
   facet kernel install ~/Downloads/ungoogled-chromium_148.0.7778.215-1.1_macos.dmg`,
 		Args: cobra.MaximumNArgs(1),
@@ -57,9 +65,23 @@ Profiles must be stopped first. FACET_CHROMIUM, when set, still wins.`,
 			if len(args) == 1 {
 				arg = args[0]
 			}
-			k, err := app.installKernel(cmd.Context(), arg, force, app.progressPrinter(), func(format string, a ...any) {
-				fmt.Fprintf(app.Err, format+"\n", a...)
-			})
+			if ifMissing {
+				locate := func(ctx context.Context) (*launch.Kernel, error) { return app.locateKernel(ctx, app.note) }
+				if downloadOnly {
+					// Unpacking is what --download-only puts off.
+					locate = launch.Locate
+				}
+				if k, err := locate(cmd.Context()); err == nil {
+					fmt.Fprintf(app.Out, "fingerprint-chromium %s is already usable at %s\n", k.Version, k.Exe)
+					return nil
+				} else if !errors.Is(err, launch.ErrNoKernel) || os.Getenv("FACET_CHROMIUM") != "" {
+					return err
+				}
+			}
+			if downloadOnly {
+				return app.downloadKernel(cmd.Context(), arg)
+			}
+			k, err := app.installKernel(cmd.Context(), arg, force, app.progressPrinter(), app.note)
 			if err != nil || k == nil {
 				return err
 			}
@@ -71,11 +93,15 @@ Profiles must be stopped first. FACET_CHROMIUM, when set, still wins.`,
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "reinstall even when that version is already installed")
+	cmd.Flags().BoolVar(&ifMissing, "if-missing", false, "do nothing when a usable kernel is already found")
+	cmd.Flags().BoolVar(&downloadOnly, "download-only", false, "download and check the archive; facet unpacks it when it next needs a kernel")
+	cmd.MarkFlagsMutuallyExclusive("force", "if-missing")
+	cmd.MarkFlagsMutuallyExclusive("force", "download-only")
 	return cmd
 }
 
 func (app *App) kernelStatus(ctx context.Context) error {
-	k, err := launch.Locate(ctx)
+	k, err := app.locateKernel(ctx, app.note)
 	switch {
 	case k != nil:
 		fmt.Fprintf(app.Out, "kernel    fingerprint-chromium %s\n", k.Version)
@@ -165,7 +191,68 @@ func (app *App) installKernel(ctx context.Context, arg string, force bool, progr
 	if a.Digest == "" {
 		note("warning: upstream published no SHA-256 for %s; it will not be checked", a.Name)
 	}
-	return kernel.Install(ctx, a, progress)
+	k, err := kernel.Install(ctx, a, progress)
+	if err == nil {
+		kernel.ClearPending()
+	}
+	return k, err
+}
+
+// downloadKernel fetches release arg ("" for the newest) into
+// kernel.PendingDir for locateKernel to unpack later.
+func (app *App) downloadKernel(ctx context.Context, arg string) error {
+	if isArchive(arg) {
+		return errors.New("--download-only takes a version, not a file: install a file with `facet kernel install FILE`")
+	}
+	releases, err := kernel.Releases(ctx)
+	if err != nil {
+		return fmt.Errorf("%w\nIf GitHub is blocked here, download the archive some other way and run `facet kernel install FILE`", err)
+	}
+	r, a, err := kernel.Pick(releases, arg, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	if path, _, ok := kernel.Pending(); ok && filepath.Base(path) == a.Name {
+		fmt.Fprintf(app.Out, "fingerprint-chromium %s is already downloaded to %s\n", r.Version, path)
+		return nil
+	}
+	app.note("downloading fingerprint-chromium %s for %s (%s)", r.Version, kernel.PlatformName(runtime.GOOS, runtime.GOARCH), sizeMB(a.Size))
+	app.note("  %s", a.URL)
+	if a.Digest == "" {
+		app.note("warning: upstream published no SHA-256 for %s; it will not be checked", a.Name)
+	}
+	path, err := kernel.Download(ctx, a, app.progressPrinter())
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(app.Out, "downloaded fingerprint-chromium %s to %s; facet unpacks it the first time it needs a kernel\n", r.Version, path)
+	return nil
+}
+
+// locateKernel finds the kernel like launch.Locate, first unpacking an
+// archive that facet kernel install --download-only left, when there is no
+// other kernel. note, when not nil, says that it is unpacking.
+func (app *App) locateKernel(ctx context.Context, note func(string, ...any)) (*launch.Kernel, error) {
+	k, err := launch.Locate(ctx)
+	if !errors.Is(err, launch.ErrNoKernel) || os.Getenv("FACET_CHROMIUM") != "" {
+		return k, err
+	}
+	path, _, ok := kernel.Pending()
+	if !ok {
+		return k, err
+	}
+	if note != nil {
+		note("unpacking %s, downloaded when facet was installed…", filepath.Base(path))
+	}
+	if _, perr := kernel.InstallPending(ctx); perr != nil {
+		return k, fmt.Errorf("%w\nunpacking the downloaded %s failed: %v", err, filepath.Base(path), perr)
+	}
+	return launch.Locate(ctx)
+}
+
+// note writes one line of progress to stderr.
+func (app *App) note(format string, a ...any) {
+	fmt.Fprintf(app.Err, format+"\n", a...)
 }
 
 // baseName is the file name in a path written with / or \.
@@ -230,7 +317,7 @@ func (app *App) progressPrinter() kernel.Progress {
 // ensureKernel returns the kernel, offering to download one when there is
 // none and someone is at the terminal to say yes.
 func (app *App) ensureKernel(ctx context.Context) (*launch.Kernel, error) {
-	k, err := launch.Locate(ctx)
+	k, err := app.locateKernel(ctx, app.note)
 	if err == nil || !errors.Is(err, launch.ErrNoKernel) || !app.StdinTTY || !app.StdoutTTY || os.Getenv("FACET_CHROMIUM") != "" {
 		return k, err
 	}
@@ -249,9 +336,7 @@ func (app *App) ensureKernel(ctx context.Context) (*launch.Kernel, error) {
 	if a := strings.ToLower(strings.TrimSpace(answer)); a != "" && a != "y" && a != "yes" {
 		return nil, err
 	}
-	installed, ierr := app.installKernel(ctx, r.Version, true, app.progressPrinter(), func(format string, a ...any) {
-		fmt.Fprintf(app.Err, format+"\n", a...)
-	})
+	installed, ierr := app.installKernel(ctx, r.Version, true, app.progressPrinter(), app.note)
 	if ierr != nil {
 		return nil, ierr
 	}

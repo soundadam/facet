@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"os/user"
 
 	appkit "github.com/soundadam/appkit/go"
 	appcli "github.com/soundadam/appkit/go/cli"
@@ -19,6 +20,16 @@ var version = "dev"
 
 func main() {
 	identity := appkit.App{Name: "facet", Version: version, Repo: "soundadam/facet"}
+
+	// The Homebrew cask sets FACET_ACCOUNT_HOME: its install steps run with
+	// HOME pointing at a scratch directory, and facet must put the kernel it
+	// downloads in the user's real one. Install steps cannot name that
+	// directory, so look it up from the account.
+	if os.Getenv("FACET_ACCOUNT_HOME") != "" {
+		if u, err := user.Current(); err == nil && u.HomeDir != "" {
+			os.Setenv("HOME", u.HomeDir)
+		}
+	}
 
 	root, err := profile.DefaultRoot()
 	if err != nil {
