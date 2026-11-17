@@ -8,17 +8,17 @@ presentation:
   command:
     - brew trust --tap soundadam/tap
     - brew install --cask soundadam/tap/facet
-  note: Free and MIT licensed. No account, no cloud, no telemetry.
+  note: Free and Apache-2.0 licensed. No account, no cloud, no telemetry.
 registry:
   github: soundadam/facet
   homebrew: soundadam/tap/facet
   docs: https://github.com/soundadam/facet#readme
 release:
   version: "0.2.0"
-  license: MIT
+  license: Apache-2.0
 modules:
   - type: promo
-    description: Running many accounts means giving each one its own computer. {title} builds on the open-source fingerprint-chromium engine. It stores the fingerprint seed, platform, proxy, time zone and language as a profile that you create, open and close from a terminal interface, and no profile sees another's cookies or logins.
+    description: "{title} builds on the open-source fingerprint-chromium engine. It stores the fingerprint seed, platform, proxy, time zone and language as a profile that you create, open and close from a terminal interface, and no profile sees another's cookies or logins."
     line: "{title} {version} is a free, {license}-licensed tool for macOS, Linux and Windows, on Intel and ARM. No sign-up and no subscription."
     actions:
       - label: Docs (Chinese)
@@ -53,7 +53,7 @@ modules:
   - type: section
     title: The same identity after every restart
     index: 2/3
-    lede: The seed is generated when a profile is created, written to `profile.toml` and never changed. Canvas, audio and fonts derive from it, and hardware concurrency is fixed at creation too, so a profile has the same fingerprint every time it opens, and no two profiles share one. The platform defaults to your own, so WebGL reports the real GPU. If you set a proxy but no time zone, {title} warns you, because an exit IP that disagrees with the time zone is the most common giveaway.
+    lede: The seed is generated when a profile is created, written to `profile.toml` and never changed. Canvas, audio and fonts derive from it, and hardware concurrency is fixed at creation too, so a profile has the same fingerprint every time it opens, and no two profiles share one. The platform defaults to your own, so WebGL reports the real GPU. If you set a proxy but no time zone, {title} warns you, because an exit IP that disagrees with the time zone is a common giveaway.
 
   - type: section
     title: Proxies with passwords, and no leak when they drop
