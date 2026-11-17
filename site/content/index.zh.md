@@ -8,14 +8,14 @@ presentation:
   command:
     - brew trust --tap soundadam/tap
     - brew install --cask soundadam/tap/facet
-  note: 免费，MIT 开源。没有账号，没有云端，没有遥测。
+  note: 免费，Apache-2.0 开源。没有账号，没有云端，没有遥测。
 registry:
   github: soundadam/facet
   homebrew: soundadam/tap/facet
   docs: https://github.com/soundadam/facet#readme
 release:
   version: "0.2.0"
-  license: MIT
+  license: Apache-2.0
 modules:
   - type: promo
     description: "{title} 基于开源内核 fingerprint-chromium，把指纹种子、平台、代理、时区、语言存成 profile，在终端界面里新建、打开、关闭，每个 profile 的 cookie 和登录状态互不相通。"

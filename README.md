@@ -215,5 +215,5 @@ make package VERSION=0.2.0   # 各平台压缩包到 dist/，需要 GNU tar 和 
 
 ## 许可
 
-Apache-2.0，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)；0.3.1 及更早的版本仍按发布时的 MIT。fingerprint-chromium 是独立项目，有自己的许可，
+Apache-2.0，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。fingerprint-chromium 是独立项目，有自己的许可，
 facet 不分发它。
