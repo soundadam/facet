@@ -18,7 +18,7 @@ release:
   license: MIT
 modules:
   - type: promo
-    description: 多账号运营要的是每个账号一台「独立的电脑」。{title} 基于开源内核 fingerprint-chromium，把指纹种子、平台、代理、时区、语言存成 profile，在终端界面里新建、打开、关闭，每个 profile 的 cookie 和登录状态互不相通。
+    description: "{title} 基于开源内核 fingerprint-chromium，把指纹种子、平台、代理、时区、语言存成 profile，在终端界面里新建、打开、关闭，每个 profile 的 cookie 和登录状态互不相通。"
     line: "{title} {version} 是 {license} 开源的免费工具，支持 macOS、Linux 和 Windows（Intel 与 ARM），不需要注册，不收订阅费。"
     actions:
       - label: 文档
@@ -53,7 +53,7 @@ modules:
   - type: section
     title: 身份固定，重启也一样
     index: 2/3
-    lede: 种子在创建 profile 时生成并写进 `profile.toml`，之后不变。canvas、音频、字体都由它派生，硬件并发数也在创建时定下，同一个 profile 每次打开指纹一致，不同 profile 之间互不相同。平台默认和本机一致，WebGL 报的就是真显卡；设了代理却没设时区，{title} 会提醒你，出口 IP 和时区对不上是最常见的破绽。
+    lede: 种子在创建 profile 时生成并写进 `profile.toml`，之后不变。canvas、音频、字体都由它派生，硬件并发数也在创建时定下，同一个 profile 每次打开指纹一致，不同 profile 之间互不相同。平台默认和本机一致，WebGL 报的就是真显卡；设了代理却没设时区，{title} 会提醒你，出口 IP 和时区对不上是常见的破绽。
 
   - type: section
     title: 带密码的代理，断了也不漏 IP
