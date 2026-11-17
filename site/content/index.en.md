@@ -8,14 +8,14 @@ presentation:
   command:
     - brew trust --tap soundadam/tap
     - brew install --cask soundadam/tap/facet
-  note: Free and Apache-2.0 licensed. No account, no cloud, no telemetry.
+  note: Free and MIT licensed. No account, no cloud, no telemetry.
 registry:
   github: soundadam/facet
   homebrew: soundadam/tap/facet
   docs: https://github.com/soundadam/facet#readme
 release:
   version: "0.2.0"
-  license: Apache-2.0
+  license: MIT
 modules:
   - type: promo
     description: "{title} builds on the open-source fingerprint-chromium engine. It stores the fingerprint seed, platform, proxy, time zone and language as a profile that you create, open and close from a terminal interface, and no profile sees another's cookies or logins."
