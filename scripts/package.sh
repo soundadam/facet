@@ -7,7 +7,7 @@
 #   facet-<ver>-windows-<arch>.zip   Windows
 #
 # each holding facet-<ver>-<os>-<arch>/facet (facet.exe on Windows) with
-# README.md, LICENSE and THIRD_PARTY_LICENSES. The version is injected as
+# README.md, LICENSE, NOTICE and THIRD_PARTY_LICENSES. The version is injected as
 # main.version; the release workflow passes the tag without its leading "v".
 # Linux runs the same script as CI, and it needs GNU tar and zip.
 set -euo pipefail
@@ -18,7 +18,7 @@ if [ "$#" -ne 1 ] || [ -z "$1" ]; then
     exit 1
 fi
 version=${1#v}
-extras=(README.md LICENSE)
+extras=(README.md LICENSE NOTICE)
 # Archive timestamps come from the commit, so the same commit and version
 # package to the same bytes.
 mtime=$(git log -1 --format=%cI)

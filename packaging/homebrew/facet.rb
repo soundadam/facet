@@ -81,7 +81,7 @@ cask "facet" do
   end
 
   caveats <<~EOS
-    facet is MIT licensed.
+    facet is Apache-2.0 licensed.
 
     facet launches fingerprint-chromium but does not bundle it. Installing
     facet downloads it from github.com/adryfish/fingerprint-chromium unless

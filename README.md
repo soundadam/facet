@@ -5,7 +5,7 @@
 
 [![CI](https://github.com/soundadam/facet/actions/workflows/ci.yml/badge.svg)](https://github.com/soundadam/facet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/soundadam/facet)](https://github.com/soundadam/facet/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 [fingerprint-chromium](https://github.com/adryfish/fingerprint-chromium) 的
 指纹全靠启动参数：种子、平台、品牌、时区、语言、代理，每次手敲，还要自己
@@ -215,5 +215,5 @@ make package VERSION=0.2.0   # 各平台压缩包到 dist/，需要 GNU tar 和 
 
 ## 许可
 
-MIT，见 [LICENSE](LICENSE)。fingerprint-chromium 是独立项目，有自己的许可，
+Apache-2.0，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)；0.3.1 及更早的版本仍按发布时的 MIT。fingerprint-chromium 是独立项目，有自己的许可，
 facet 不分发它。
